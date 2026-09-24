@@ -1,0 +1,41 @@
+# Rebuilds obb-search-index.json from the LIVE episode pages on okaybutbirds.com
+# and commits it only if it changed. Added 2026-09-24 so release-morning search
+# needs no Terminal step.
+#   Thursday 11:30 and 13:30 UTC: 30 min and 2.5 h after the 7:00 AM ET release
+#   Daily 09:00 UTC: picks up transcript fixes on older episodes
+#   "Run workflow" button on the Actions tab: on demand
+# build_search_index.py refuses to write a partial or shrunken index, so a bad
+# crawl fails the run (GitHub emails the failure) instead of publishing damage.
+# Keep build_search_index.py in step with ~/Projects/obb-editor/build_search_index.py.
+name: Rebuild search index
+on:
+  schedule:
+    - cron: '30 11 * * 4'
+    - cron: '30 13 * * 4'
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: rebuild-index
+  cancel-in-progress: false
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests beautifulsoup4
+      - run: python build_search_index.py --out obb-search-index.json
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add obb-search-index.json
+          if git diff --cached --quiet; then echo "Index unchanged."; exit 0; fi
+          n=$(python -c "import json; print(len(json.load(open('obb-search-index.json'))['episodes']))")
+          git commit -m "Update search index ($n episodes, automated)"
+          git push
